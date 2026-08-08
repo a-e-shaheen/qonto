@@ -1,0 +1,184 @@
+{
+  "title": "Bulk Transfer Service",
+  "uid": "bulk-transfer-service",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "10s",
+  "tags": ["qonto-bulk-transfer"],
+  "panels": [
+    { "id": 1, "type": "row", "title": "Financial & Business Integrity", "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 }, "collapsed": false, "panels": [] },
+
+    {
+      "id": 2, "type": "timeseries", "title": "Bulk transfers by outcome (rate)",
+      "description": "bulk_transfers_total — success | insufficient_funds | invalid_payload | account_not_found | server_error",
+      "gridPos": { "x": 0, "y": 1, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [{ "expr": "sum by (status) (rate(bulk_transfers_total[5m]))", "legendFormat": "{{status}}", "refId": "A" }]
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Money processed (successfully applied transfers)",
+      "description": "transfer_amount_cents_total — only increments on 204, for reconciliation against the ledger",
+      "gridPos": { "x": 12, "y": 1, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [{ "expr": "rate(transfer_amount_cents_total[5m])", "legendFormat": "cents/sec", "refId": "A" }]
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Bulk transfer batch size (p50 / p95)",
+      "description": "bulk_transfer_batch_size — number of individual transfers per request, any outcome",
+      "gridPos": { "x": 0, "y": 9, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(bulk_transfer_batch_size_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(bulk_transfer_batch_size_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "B" }
+      ]
+    },
+    {
+      "id": 5, "type": "stat", "title": "Balance invariant violations (critical — page immediately if > 0)",
+      "description": "balance_invariant_violations_total — should never increment; a nonzero value means a bug or race condition let a balance go negative",
+      "gridPos": { "x": 12, "y": 9, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "targets": [{ "expr": "sum(increase(balance_invariant_violations_total[1h])) or vector(0)", "refId": "A" }]
+    },
+
+    { "id": 10, "type": "row", "title": "API Traffic (RED)", "gridPos": { "x": 0, "y": 17, "w": 24, "h": 1 }, "collapsed": false, "panels": [] },
+
+    {
+      "id": 11, "type": "timeseries", "title": "HTTP requests by route/status (rate)",
+      "description": "http_requests_total — alert if 5xx exceeds 0.1% of traffic over 5m",
+      "gridPos": { "x": 0, "y": 18, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [{ "expr": "sum by (route, status_code) (rate(http_requests_total[5m]))", "legendFormat": "{{route}} [{{status_code}}]", "refId": "A" }]
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "HTTP request duration (p50 / p95 / p99)",
+      "description": "http_request_duration_seconds — alert if p95 > 2s",
+      "gridPos": { "x": 12, "y": 18, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 2 }] },
+          "custom": { "thresholdsStyle": { "mode": "line" } }
+        },
+        "overrides": []
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, route))", "legendFormat": "p50 {{route}}", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, route))", "legendFormat": "p95 {{route}}", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, route))", "legendFormat": "p99 {{route}}", "refId": "C" }
+      ]
+    },
+    {
+      "id": 13, "type": "timeseries", "title": "In-flight requests",
+      "description": "http_in_flight_requests — current concurrent requests across all instances",
+      "gridPos": { "x": 0, "y": 26, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [{ "expr": "sum by (route) (http_in_flight_requests)", "legendFormat": "{{route}}", "refId": "A" }]
+    },
+
+    { "id": 20, "type": "row", "title": "Database & Concurrency", "gridPos": { "x": 0, "y": 34, "w": 24, "h": 1 }, "collapsed": false, "panels": [] },
+
+    {
+      "id": 21, "type": "timeseries", "title": "DB transaction duration (p50 / p95 / p99)",
+      "description": "db_transaction_duration_seconds — time inside BEGIN...COMMIT; long transactions hold row locks and kill throughput",
+      "gridPos": { "x": 0, "y": 35, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(db_transaction_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(db_transaction_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(db_transaction_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+    {
+      "id": 22, "type": "timeseries", "title": "Row-lock wait latency (p99)",
+      "description": "db_lock_wait_duration_seconds — SELECT ... FOR UPDATE on bank_accounts; alert if p99 > 500ms",
+      "gridPos": { "x": 12, "y": 35, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.5 }] },
+          "custom": { "thresholdsStyle": { "mode": "line" } }
+        },
+        "overrides": []
+      },
+      "targets": [{ "expr": "histogram_quantile(0.99, sum(rate(db_lock_wait_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "A" }]
+    },
+    {
+      "id": 23, "type": "timeseries", "title": "Concurrency conflicts (serialization failures / deadlocks)",
+      "description": "db_concurrency_conflicts_total — SQLSTATE 40001/40P01 across all queries; expected to stay at zero given this service's single-row-lock design",
+      "gridPos": { "x": 0, "y": 43, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [{ "expr": "sum(rate(db_concurrency_conflicts_total[5m])) or vector(0)", "legendFormat": "conflicts/sec", "refId": "A" }]
+    },
+    {
+      "id": 24, "type": "timeseries", "title": "Connection pool acquire wait (cumulative average)",
+      "description": "db_connection_pool_wait_duration_seconds — pgx only exposes cumulative pool stats, so this is a running average, not a per-request histogram",
+      "gridPos": { "x": 12, "y": 43, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [{ "expr": "db_connection_pool_wait_duration_seconds", "legendFormat": "avg wait", "refId": "A" }]
+    },
+    {
+      "id": 25, "type": "timeseries", "title": "DB queries by operation (rate)",
+      "description": "db_queries_total — every SQL statement and COPY, labeled by operation (SELECT/INSERT/UPDATE/COPY) and outcome (ok/error), independent of trace sampling",
+      "gridPos": { "x": 0, "y": 51, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [{ "expr": "sum by (operation, status) (rate(db_queries_total[5m]))", "legendFormat": "{{operation}} [{{status}}]", "refId": "A" }]
+    },
+    {
+      "id": 26, "type": "timeseries", "title": "DB query duration by operation (p95)",
+      "description": "db_query_duration_seconds — per-statement latency, split by operation so a slow COPY doesn't get averaged away by fast SELECTs",
+      "gridPos": { "x": 12, "y": 51, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum(rate(db_query_duration_seconds_bucket[5m])) by (le, operation))", "legendFormat": "p95 {{operation}}", "refId": "A" }]
+    },
+
+    { "id": 30, "type": "row", "title": "Traces (filtered)", "gridPos": { "x": 0, "y": 59, "w": 24, "h": 1 }, "collapsed": false, "panels": [] },
+
+    {
+      "id": 31, "type": "traces", "title": "Errored requests",
+      "description": "Traces with an errored span — infra failures, not ordinary 422/404 business denials (see pkg/observability.RecordOutcome vs RecordError)",
+      "gridPos": { "x": 0, "y": 60, "w": 12, "h": 10 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [{ "queryType": "traceql", "query": "{status=error}", "refId": "A" }]
+    },
+    {
+      "id": 32, "type": "traces", "title": "Slow requests (> 500ms)",
+      "description": "Matches the db_lock_wait_duration_seconds p99 alert threshold — traces likely to be lock-contention-bound",
+      "gridPos": { "x": 12, "y": 60, "w": 12, "h": 10 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [{ "queryType": "traceql", "query": "{duration>500ms}", "refId": "A" }]
+    },
+
+    { "id": 40, "type": "row", "title": "Logs", "gridPos": { "x": 0, "y": 70, "w": 24, "h": 1 }, "collapsed": false, "panels": [] },
+
+    {
+      "id": 41, "type": "logs", "title": "Application logs",
+      "description": "log/slog output, bridged through OTel logs (see pkg/observability.NewSlogLogger) and shipped via OTLP to Loki — same lines also go to stdout (docker compose logs app)",
+      "gridPos": { "x": 0, "y": 71, "w": 24, "h": 10 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessages": true },
+      "targets": [{ "expr": "{service_name=\"qonto-bulk-transfer\"}", "refId": "A" }]
+    }
+  ]
+}

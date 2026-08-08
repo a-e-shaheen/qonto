@@ -1,0 +1,85 @@
+x-postgres-image: &postgres-image ghcr.io/dbsystel/postgresql-partman:16
+
+services:
+  # `default`: local dev / manual smoke-testing (`make deps-up && make run`).
+  # `testing`: just the database, for `make test-integration` — the app under test
+  # runs as the Go test binary itself, not this image.
+  postgres:
+    image: *postgres-image
+    profiles: ["default", "testing"]
+    environment:
+      POSTGRES_USER: qonto
+      POSTGRES_PASSWORD: qonto
+      POSTGRES_DB: qonto
+    # pg_partman's background worker needs shared_preload_libraries plus its own
+    # GUCs (interval/role/dbname) — see docs/schema.md for why transactions is
+    # partitioned this way.
+    # log_statement=all is a Postgres-side observability setting independent of
+    # the app's own OTel query spans/metrics: every statement lands in
+    # `docker compose logs postgres`, useful when you want to see exactly what hit
+    # the database, including anything run manually against this same instance
+    # (psql, migrations).
+    command:
+      - "-c"
+      - "shared_preload_libraries=pg_partman_bgw"
+      - "-c"
+      - "pg_partman_bgw.interval=3600"
+      - "-c"
+      - "pg_partman_bgw.role=qonto"
+      - "-c"
+      - "pg_partman_bgw.dbname=qonto"
+      - "-c"
+      - "log_statement=all"
+    ports:
+      # Host port 5433, not 5432 — this machine already runs another project's
+      # Postgres on 5432. Container-internal port stays 5432.
+      - "5433:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qonto -d qonto"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  app:
+    profiles: ["default"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Inlined rather than an env_file: nothing here is secret (dummy local dev
+    # credentials only), and this way the exact config is visible in one place
+    # without a separate .env file a reviewer would need to go find.
+    environment:
+      DB_DSN: postgres://qonto:qonto@postgres:5432/qonto?sslmode=disable
+      DB_MAX_CONNS: "10"
+      HTTP_PORT: "8080"
+      HTTP_SHUTDOWN_TIMEOUT: 10s
+      SEED_ON_STARTUP: "true"
+      OTEL_SERVICE_NAME: qonto-bulk-transfer
+      OTEL_EXPORTER_OTLP_ENDPOINT: lgtm:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_TRACE_SAMPLE_RATIO: "1"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # All-in-one Grafana + Loki + Tempo + Mimir/Prometheus + embedded OTel collector —
+  # one container instead of running each piece separately.
+  lgtm:
+    image: grafana/otel-lgtm:0.22.1
+    profiles: ["monitor"]
+    ports:
+      - "3000:3000" # Grafana
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    environment:
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /otel-lgtm/grafana/conf/provisioning/dashboards/custom/dashboard-bulk-transfer.json
+    volumes:
+      - ./dashboards-provisioning.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/custom.yaml:ro
+      - ./dashboard-bulk-transfer.json:/otel-lgtm/grafana/conf/provisioning/dashboards/custom/dashboard-bulk-transfer.json:ro
+
+volumes:
+  db-data:

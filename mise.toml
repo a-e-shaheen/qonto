@@ -1,0 +1,20 @@
+# Pins every CLI tool this project's workflow touches, per-project, so `mise
+# install` gets a contributor to a working toolchain without hunting for
+# versions. This is a convenience layer, not the only way to get these tools:
+# `make deps` installs the Go-based ones (golangci-lint, mockery, migrate,
+# gotestfmt, vegeta) via `go install` directly, with the exact same version
+# pins as below, so CI and anyone without mise still gets a reproducible setup.
+#
+# vegeta and gotestfmt have no mise/aqua registry entry, so they're `go
+# install`-only (see the Makefile's `deps` target) and aren't listed here.
+#
+# Docker Engine itself (via Colima) is a VM/daemon, not a versioned CLI binary
+# in the way the entries below are — `colima start` is a documented
+# prerequisite in the README, not something `mise install` brings up for you.
+[tools]
+go = "1.26.4"
+golangci-lint = "2.11.3"
+mockery = "2.53.6"
+gomigrate = "4.19.1"
+colima = "0.10.3"
+docker-compose = "5.4.0"

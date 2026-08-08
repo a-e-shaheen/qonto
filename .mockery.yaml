@@ -1,0 +1,22 @@
+# Config-based mockery setup — one file listing every mocked interface, rather than
+# scattering //go:generate mockery comments across the codebase: this repo has
+# exactly two consumer-side interfaces to mock, so centralizing them here is easier
+# to review than hunting for annotations.
+with-expecter: true
+resolve-type-alias: false
+disable-version-string: true
+issue-845-fix: true
+packages:
+  qonto-bulk-transfer/internal/transfer/service:
+    config:
+      dir: "internal/transfer/service/mocks"
+      outpkg: mocks
+    interfaces:
+      Repository:
+      Transactor:
+  qonto-bulk-transfer/internal/transfer/server:
+    config:
+      dir: "internal/transfer/server/mocks"
+      outpkg: mocks
+    interfaces:
+      Service:
